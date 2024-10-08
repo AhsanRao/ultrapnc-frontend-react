@@ -146,7 +146,24 @@ export const AuthProvider = ({ children }) => {
 
   const logout = async () => {
     try {
-      await axios.post("/auth/logout/", { refresh: refreshToken });
+      const response = await fetch(`${API_BASE_URL}/auth/logout/`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ refresh: refreshToken }),
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(
+          `HTTP error! status: ${response.status}, message: ${text}`
+        );
+      }
+
+      const text = await response.text();
     } catch (error) {
       console.error("Error during logout:", error);
     } finally {
@@ -157,7 +174,7 @@ export const AuthProvider = ({ children }) => {
       localStorage.removeItem("refreshToken");
     }
   };
-
+  
   const updateProfile = async (userData) => {
     try {
       const response = await axios.put("/auth/profile/", userData);
@@ -169,6 +186,48 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const refreshAccessToken = async () => {
+    try {
+      const response = await axios.post("/auth/token/refresh/", {
+        refresh: refreshToken,
+      });
+      const newAccessToken = response.data.access;
+      setAccessToken(newAccessToken);
+      localStorage.setItem("accessToken", newAccessToken);
+      return newAccessToken;
+    } catch (error) {
+      console.error("Error refreshing access token:", error);
+      logout();
+      return null;
+    }
+  };
+
+  useEffect(() => {
+    const initializeAuth = async () => {
+      if (accessToken) {
+        try {
+          const response = await axios.get("/auth/profile/");
+          setUser(response.data);
+        } catch (error) {
+          console.error("Error fetching user profile:", error);
+          logout();
+        }
+      }
+      setLoading(false);
+    };
+
+    initializeAuth();
+
+    // Set up token refresh interval
+    const refreshInterval = setInterval(() => {
+      if (refreshToken) {
+        refreshAccessToken();
+      }
+    }, 40 * 60 * 1000); // Refresh every 40 minutes
+
+    return () => clearInterval(refreshInterval);
+  }, [accessToken, refreshToken]);
+
   return (
     <AuthContext.Provider
       value={{
@@ -178,6 +237,7 @@ export const AuthProvider = ({ children }) => {
         logout,
         register,
         updateProfile,
+        refreshAccessToken,
         isAuthenticated: !!user,
       }}
     >
